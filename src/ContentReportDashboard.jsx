@@ -126,14 +126,14 @@ export default function ContentReportDashboard(){
   const uploadToBackend = async (file) => {
     const form = new FormData()
     form.append('file', file)
-    const res = await fetch(`${apiBase}/generate`, {method:'POST', body:form})
+    const res = await fetch(`${apiBase}/generate`, {method:'POST', body:form, headers:{'ngrok-skip-browser-warning':'1'}})
     if (!res.ok) throw new Error(`Backend error: ${res.status}`)
     return res.json()
   }
 
   const pollJobStatus = useCallback(async (job_id, intervalRef) => {
     try {
-      const res = await fetch(`${apiBase}/status/${job_id}`)
+      const res = await fetch(`${apiBase}/status/${job_id}`, {headers:{'ngrok-skip-browser-warning':'1'}})
       if (!res.ok) return
       const job = await res.json()
       console.log(`[Report] poll job=${job_id} status=${job.status} duration_source=${job.duration_source}`)
@@ -221,7 +221,7 @@ export default function ContentReportDashboard(){
     try {
       if (data?.download_ready) {
         // Backend has the Excel ready — stream it directly
-        const res = await fetch(`${apiBase}/download`)
+        const res = await fetch(`${apiBase}/download`, {headers:{'ngrok-skip-browser-warning':'1'}})
         if (!res.ok) throw new Error('Download failed')
         const blob = await res.blob()
         const url  = URL.createObjectURL(blob)
@@ -337,6 +337,7 @@ export default function ContentReportDashboard(){
   // Show loading spinner overlay on top of data when fetching MySQL
   const fetchingDuration = loading && data !== null
 
+  if (!data) return null
   const {summary,datewise,date_cols,duration_source,has_local_duration} = data
   const METRICS = [
     {metric:'Total Published Content',group:'overall'},
