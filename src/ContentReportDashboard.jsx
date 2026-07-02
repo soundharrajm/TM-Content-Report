@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import * as XLSX from "xlsx"
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -131,15 +131,67 @@ export default function ContentReportDashboard(){
     return res.json()
   }
 
+  const pollJobStatus = useCallback(async (job_id, intervalRef) => {
+    try {
+      const res = await fetch(`${apiBase}/status/${job_id}`)
+      if (!res.ok) return
+      const job = await res.json()
+      console.log(`[Report] poll job=${job_id} status=${job.status} duration_source=${job.duration_source}`)
+
+      // Update data with latest summary (includes hours once MySQL done)
+      setData(prev => prev ? {
+        ...prev,
+        summary:         job.summary,
+        datewise:        job.datewise,
+        date_cols:       job.date_cols,
+        duration_source: job.duration_source,
+        download_ready:  job.download_ready,
+        status:          job.status,
+      } : prev)
+
+      // Stop polling when done or error
+      if (job.status === 'done' || job.status === 'error') {
+        clearInterval(intervalRef.current)
+        setLoading(false)
+        if (job.status === 'done') {
+          console.log(`[Report] job=${job_id} complete — hours updated`)
+        }
+      }
+    } catch(e) {
+      clearInterval(intervalRef.current)
+      setLoading(false)
+    }
+  }, [apiBase])
+
   const processFile = useCallback(async(file) => {
     setError(null); setLoading(true); setData(null)
+    const pollRef = { current: null }
+
     try {
       // Try backend first
       try {
-        console.log('[Report] Sending to backend...')
+        console.log('[Report] Uploading to backend...')
         const result = await uploadToBackend(file)
-        console.log(`[Report] Backend: duration_source=${result.duration_source}`)
-        setData(result)
+        console.log(`[Report] Parsed — job=${result.job_id} status=${result.status}`)
+
+        // Show initial data immediately (counts without hours)
+        setData({...result, status: result.status})
+        setLoading(false)
+
+        // If MySQL fetch pending — start polling every 2s
+        if (result.status !== 'done' && result.job_id) {
+          console.log(`[Report] Starting poll for job=${result.job_id}`)
+          setLoading(true)
+          pollRef.current = setInterval(
+            () => pollJobStatus(result.job_id, pollRef),
+            2000
+          )
+          // Safety timeout after 60s
+          setTimeout(() => {
+            clearInterval(pollRef.current)
+            setLoading(false)
+          }, 60000)
+        }
         return
       } catch(backendErr) {
         console.warn('[Report] Backend unavailable, falling back to local parse:', backendErr.message)
@@ -160,9 +212,9 @@ export default function ContentReportDashboard(){
       return
     } catch(err) {
       setError(err.message)
+      setLoading(false)
     }
-    setLoading(false)
-  },[apiBase])
+  },[apiBase, pollJobStatus])
 
   const handleDownload = async () => {
     setDlLoading(true)
@@ -282,15 +334,8 @@ export default function ContentReportDashboard(){
     </div>
   )
 
-  if(loading) return (
-    <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'system-ui,sans-serif'}}>
-      <div style={{textAlign:'center'}}>
-        <div style={{fontSize:44,marginBottom:16}}>⏳</div>
-        <div style={{fontSize:16,fontWeight:700,color:C.navy,marginBottom:8}}>Generating report...</div>
-        <div style={{fontSize:13,color:C.muted}}>Querying MySQL for duration data</div>
-      </div>
-    </div>
-  )
+  // Show loading spinner overlay on top of data when fetching MySQL
+  const fetchingDuration = loading && data !== null
 
   const {summary,datewise,date_cols,duration_source,has_local_duration} = data
   const METRICS = [
@@ -355,6 +400,15 @@ export default function ContentReportDashboard(){
           }}>{label}</button>
         ))}
       </div>
+
+      {/* MySQL fetch overlay */}
+      {fetchingDuration && (
+        <div style={{background:'#EEF4FF',borderBottom:`1px solid ${C.border}`,padding:'10px 24px',display:'flex',alignItems:'center',gap:10,fontSize:13}}>
+          <span style={{fontSize:18,animation:'spin 1s linear infinite',display:'inline-block'}}>⏳</span>
+          <span style={{color:C.navy,fontWeight:600}}>Fetching duration from MySQL...</span>
+          <span style={{color:C.muted}}>Hours will update automatically when complete</span>
+        </div>
+      )}
 
       <div style={{padding:'20px 24px',maxWidth:1400,margin:'0 auto'}}>
         {tab==='summary'&&(
