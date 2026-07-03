@@ -82,6 +82,7 @@ function parseLocally(rows) {
       by_type: byType, by_type_hours: byTypeHours,
       manual_content: man.length, manual_hours: round(man.reduce((s,r)=>s+r.durHrs,0)),
       l2v_content: l2v.length,   l2v_hours:    round(l2v.reduce((s,r)=>s+r.durHrs,0)),
+      dvb_content: 0,  dvb_hours: 0,  // placeholder until DVB logic defined
     },
     datewise: Object.keys(datewise[metrics[0]]).length
       ? metrics.map(m=>({Metric:m,...datewise[m],Total:round(Object.values(datewise[m]).reduce((a,b)=>a+b,0))}))
@@ -381,8 +382,8 @@ export default function ContentReportDashboard(){
     {metric:'Manual Content',group:'manual'},{metric:'Manual Hours',group:'manual'},
     {metric:'L2V Content',group:'l2v'},{metric:'L2V Hours',group:'l2v'},
   ]
-  const GRP_COLOR={overall:C.blue,type:C.teal,manual:C.amber,l2v:C.purple}
-  const GRP_BG   ={overall:'#EAF1FB',type:'#EEF8EE',manual:'#FFF9EC',l2v:'#F5F0FF'}
+  const GRP_COLOR={overall:C.blue,type:C.teal,manual:C.amber,l2v:C.purple,dvb:'#0E6655'}
+  const GRP_BG   ={overall:'#EAF1FB',type:'#EEF8EE',manual:'#FFF9EC',l2v:'#F5F0FF',dvb:'#E8F8F5'}
 
   return (
     <div style={{minHeight:'100vh',background:C.bg,fontFamily:'system-ui,sans-serif'}}>
