@@ -119,6 +119,7 @@ export default function ContentReportDashboard(){
   const [drag,setDrag]         = useState(false)
   const [tab,setTab]           = useState('summary')
   const [dlLoading,setDlLoading]= useState(false)
+  const [loadingMsg,setLoadingMsg] = useState('Processing file...')
   const [apiBase,setApiBase]   = useState(API_BASE)
   const [showApi,setShowApi]   = useState(false)
 
@@ -166,9 +167,14 @@ export default function ContentReportDashboard(){
     setError(null); setLoading(true); setData(null)
     const pollRef = { current: null }
 
+    setLoadingMsg('Uploading file...')
+    // Give React time to render loading screen before heavy processing
+    await new Promise(resolve => setTimeout(resolve, 50))
+
     try {
       // Try backend first
       try {
+        setLoadingMsg('Uploading to backend...')
         console.log('[Report] Uploading to backend...')
         const result = await uploadToBackend(file)
         console.log(`[Report] Parsed — job=${result.job_id} status=${result.status}`)
@@ -180,6 +186,7 @@ export default function ContentReportDashboard(){
         // If MySQL fetch pending — start polling every 2s
         if (result.status !== 'done' && result.job_id) {
           console.log(`[Report] Starting poll for job=${result.job_id}`)
+          setLoadingMsg('Querying MySQL for durations...')
           setLoading(true)
           pollRef.current = setInterval(
             () => pollJobStatus(result.job_id, pollRef),
@@ -198,13 +205,24 @@ export default function ContentReportDashboard(){
 
       // Fallback: parse locally (no MySQL duration)
       const reader = new FileReader()
-      reader.onload = e => {
-        const wb   = XLSX.read(e.target.result, {type:'array'})
-        const ws   = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json(ws, {raw:false})
-        const result = parseLocally(rows)
-        setData(result)
-        setLoading(false)
+      reader.onload = async e => {
+        try {
+          setLoadingMsg('Reading file...')
+          await new Promise(resolve => setTimeout(resolve, 10))
+          const wb   = XLSX.read(e.target.result, {type:'array', dense:true})
+          const ws   = wb.Sheets[wb.SheetNames[0]]
+          setLoadingMsg('Parsing rows...')
+          await new Promise(resolve => setTimeout(resolve, 10))
+          const rows = XLSX.utils.sheet_to_json(ws, {raw:false})
+          setLoadingMsg('Calculating metrics...')
+          await new Promise(resolve => setTimeout(resolve, 10))
+          const result = parseLocally(rows)
+          setData(result)
+          setLoading(false)
+        } catch(parseErr) {
+          setError('Failed to parse file: ' + parseErr.message)
+          setLoading(false)
+        }
       }
       reader.onerror = () => { setError('Failed to read file'); setLoading(false) }
       reader.readAsArrayBuffer(file)
@@ -335,6 +353,24 @@ export default function ContentReportDashboard(){
 
   // Show loading spinner overlay on top of data when fetching MySQL
   const fetchingDuration = loading && data !== null
+
+  // Full screen loading when no data yet
+  if (loading && !data) return (
+    <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'system-ui,sans-serif'}}>
+      <div style={{textAlign:'center',maxWidth:400}}>
+        <div style={{fontSize:44,marginBottom:16,animation:'pulse 1.5s ease-in-out infinite'}}>📊</div>
+        <div style={{fontSize:16,fontWeight:700,color:C.navy,marginBottom:8}}>{loadingMsg}</div>
+        <div style={{width:200,height:4,background:'#E0E7FF',borderRadius:4,margin:'16px auto',overflow:'hidden'}}>
+          <div style={{height:'100%',background:C.blue,borderRadius:4,animation:'progress 2s ease-in-out infinite'}}/>
+        </div>
+        <div style={{fontSize:12,color:C.muted}}>Please wait — processing your file</div>
+      </div>
+      <style>{`
+        @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.1)} }
+        @keyframes progress { 0%{width:0%;margin-left:0} 50%{width:60%;margin-left:20%} 100%{width:0%;margin-left:100%} }
+      `}</style>
+    </div>
+  )
 
   if (!data) return null
   const {summary,datewise,date_cols,duration_source,has_local_duration} = data
