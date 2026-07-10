@@ -246,6 +246,13 @@ export default function ContentReportDashboard(){
   const [projects, setProjects] = useState([])
   const [projectId, setProjectId] = useState('default')
   const [projectsError, setProjectsError] = useState(null)
+  const [inputMode, setInputMode] = useState('upload')   // 'upload' | 'months'
+  const [selectedMonths, setSelectedMonths] = useState([new Date().getMonth() + 1])
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+
+  const toggleMonth = (m) => setSelectedMonths(prev =>
+    prev.includes(m) ? prev.filter(x=>x!==m) : [...prev, m].sort((a,b)=>a-b))
 
   // Load available projects (each with its own DB config) for the dropdown
   useEffect(() => {
@@ -303,6 +310,36 @@ export default function ContentReportDashboard(){
       setLoading(false)
     }
   }, [apiBase])
+
+  const generateFromDb = useCallback(async () => {
+    setError(null); setLoading(true); setData(null)
+    setLoadingMsg('Querying database...')
+    await new Promise(resolve => setTimeout(resolve, 50))
+
+    try {
+      const res = await fetch(`${apiBase}/generate-from-db`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json', 'ngrok-skip-browser-warning':'1'},
+        body: JSON.stringify({
+          project_id: projectId,
+          months: selectedMonths,
+          year: selectedYear,
+          include_archived_purged: includeArchivedPurged,
+        }),
+      })
+      if (!res.ok) {
+        const errBody = await res.json().catch(()=>({detail: `Backend error: ${res.status}`}))
+        throw new Error(errBody.detail || `Backend error: ${res.status}`)
+      }
+      const result = await res.json()
+      console.log(`[Report] DB-generated — job=${result.job_id} status=${result.status}`)
+      setData({...result, status: result.status})
+      setLoading(false)
+    } catch(err) {
+      setError(err.message)
+      setLoading(false)
+    }
+  }, [apiBase, projectId, selectedMonths, selectedYear, includeArchivedPurged])
 
   const processFile = useCallback(async(file) => {
     setError(null); setLoading(true); setData(null)
@@ -481,7 +518,7 @@ export default function ContentReportDashboard(){
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'system-ui,sans-serif'}}>
       <div style={{textAlign:'center',maxWidth:520,width:'100%',padding:'0 20px'}}>
         <div style={{fontSize:52,marginBottom:12}}>📡</div>
-        <h1 style={{fontSize:24,fontWeight:800,color:C.navy,marginBottom:6}}>TM Content Report</h1>
+        <h1 style={{fontSize:24,fontWeight:800,color:C.navy,marginBottom:6}}>Content Reports</h1>
         <p style={{color:C.muted,fontSize:14,marginBottom:28}}>Upload content-report.xlsx to generate the publishing dashboard</p>
 
         {/* Project selector — each project has its own separate DB config for duration lookups */}
@@ -501,6 +538,46 @@ export default function ContentReportDashboard(){
           )}
         </div>
 
+        {/* Input mode toggle: upload a file, or query the DB directly for selected months */}
+        <div style={{display:'flex',gap:8,marginBottom:16}}>
+          <button onClick={()=>setInputMode('upload')} style={{flex:1,padding:'9px 12px',borderRadius:10,
+            border:`1.5px solid ${inputMode==='upload'?C.blue:C.border}`,
+            background:inputMode==='upload'?'#EAF1FB':C.card,color:inputMode==='upload'?C.blue:C.muted,
+            fontWeight:700,fontSize:13,cursor:'pointer'}}>📂 Upload File</button>
+          <button onClick={()=>setInputMode('months')} style={{flex:1,padding:'9px 12px',borderRadius:10,
+            border:`1.5px solid ${inputMode==='months'?C.blue:C.border}`,
+            background:inputMode==='months'?'#EAF1FB':C.card,color:inputMode==='months'?C.blue:C.muted,
+            fontWeight:700,fontSize:13,cursor:'pointer'}}>📅 Select Months</button>
+        </div>
+
+        {inputMode === 'months' ? (
+          <div style={{textAlign:'left',marginBottom:16,background:C.card,border:`1.5px solid ${C.border}`,borderRadius:12,padding:16}}>
+            <label style={{fontSize:12,fontWeight:600,color:C.navy,display:'block',marginBottom:6}}>Year</label>
+            <input type="number" value={selectedYear} onChange={e=>setSelectedYear(parseInt(e.target.value)||selectedYear)}
+              style={{width:'100%',padding:'9px 12px',borderRadius:8,border:`1.5px solid ${C.border}`,
+                background:C.bg,color:C.navy,fontSize:14,fontWeight:600,outline:'none',boxSizing:'border-box',marginBottom:14}} />
+
+            <label style={{fontSize:12,fontWeight:600,color:C.navy,display:'block',marginBottom:6}}>Months</label>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:6,marginBottom:14}}>
+              {MONTH_NAMES.map((name,i)=>{
+                const m = i+1, active = selectedMonths.includes(m)
+                return (
+                  <button key={m} onClick={()=>toggleMonth(m)} style={{padding:'8px 4px',borderRadius:8,
+                    border:`1.5px solid ${active?C.blue:C.border}`,background:active?C.blue:C.bg,
+                    color:active?'#fff':C.muted,fontWeight:700,fontSize:12,cursor:'pointer'}}>{name}</button>
+                )
+              })}
+            </div>
+
+            <button onClick={()=>generateFromDb()} disabled={!selectedMonths.length}
+              style={{width:'100%',padding:'12px',borderRadius:10,border:'none',
+                background:selectedMonths.length?C.blue:'#ccc',color:'#fff',fontWeight:700,fontSize:14,
+                cursor:selectedMonths.length?'pointer':'not-allowed'}}>
+              ⚡ Generate Report ({selectedMonths.length} month{selectedMonths.length===1?'':'s'} selected)
+            </button>
+          </div>
+        ) : (
+        <>
         <div
           onDrop={onDrop}
           onDragOver={e=>{e.preventDefault();setDrag(true)}}
@@ -514,6 +591,8 @@ export default function ContentReportDashboard(){
           <div style={{fontSize:12,color:C.muted}}>Supports content-report.xlsx with optional _duration_hrs column</div>
         </div>
         <input id="fi" type="file" accept=".xlsx,.xls" onChange={e=>e.target.files[0]&&processFile(e.target.files[0])} style={{display:'none'}}/>
+        </>
+        )}
 
         {/* API Base Config */}
         <div style={{marginBottom:12}}>
