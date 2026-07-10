@@ -84,6 +84,33 @@ export default function ContentReportDashboard(){
     }
   }, [apiBase])
 
+  // DB-direct jobs report status='done' immediately (the numbers are ready
+  // synchronously), but the styled Excel file is still built in the
+  // background — download_ready flips to true separately, later. Without
+  // this, handleDownload() would never see download_ready become true and
+  // would always fall back to the plain, unstyled browser-side Excel export.
+  const pollUntilDownloadReady = useCallback((job_id, maxAttempts = 20) => {
+    let attempts = 0
+    const intervalRef = { current: null }
+    const check = async () => {
+      attempts++
+      try {
+        const res = await fetch(`${apiBase}/status/${job_id}`, {headers:{'ngrok-skip-browser-warning':'1'}})
+        if (res.ok) {
+          const job = await res.json()
+          setData(prev => prev ? { ...prev, download_ready: job.download_ready } : prev)
+          if (job.download_ready) {
+            console.log(`[Report] job=${job_id} Excel ready on backend`)
+            clearInterval(intervalRef.current)
+          }
+        }
+      } catch (e) { /* keep trying until maxAttempts */ }
+      if (attempts >= maxAttempts) clearInterval(intervalRef.current)
+    }
+    intervalRef.current = setInterval(check, 1000)
+    check()
+  }, [apiBase])
+
   const generateFromDb = useCallback(async () => {
     setError(null); setLoading(true); setData(null)
     setLoadingMsg('Querying database...')
@@ -108,11 +135,14 @@ export default function ContentReportDashboard(){
       console.log(`[Report] DB-generated — job=${result.job_id} status=${result.status}`)
       setData({...result, status: result.status})
       setLoading(false)
+      // status is already 'done' here, but the styled Excel is still building
+      // in the background — poll separately until download_ready flips true
+      if (result.job_id) pollUntilDownloadReady(result.job_id)
     } catch(err) {
       setError(err.message)
       setLoading(false)
     }
-  }, [apiBase, projectId, selectedMonths, selectedYear, includeArchivedPurged])
+  }, [apiBase, projectId, selectedMonths, selectedYear, includeArchivedPurged, pollUntilDownloadReady])
 
   const processFile = useCallback(async(file) => {
     setError(null); setLoading(true); setData(null)
