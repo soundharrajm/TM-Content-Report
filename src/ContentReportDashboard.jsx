@@ -193,6 +193,8 @@ export default function ContentReportDashboard(){
         summary:         job.summary,
         datewise:        job.datewise,
         date_cols:       job.date_cols,
+        monthwise:       job.monthwise,
+        month_cols:      job.month_cols,
         duration_source: job.duration_source,
         download_ready:  job.download_ready,
         status:          job.status,
@@ -297,6 +299,8 @@ export default function ContentReportDashboard(){
         summary: buildPlaceholderSummary(),
         datewise: [],
         date_cols: [],
+        monthwise: [],
+        month_cols: [],
         duration_source: 'mysql_direct',
       })
       setLoading(false)
