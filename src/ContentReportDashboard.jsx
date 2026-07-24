@@ -20,6 +20,13 @@ export default function ContentReportDashboard(){
   const [showApi,setShowApi]   = useState(false)
   const [includeArchivedPurged, setIncludeArchivedPurged] = useState(true)
   const [includeDvb, setIncludeDvb] = useState(true)
+  // Separate from includeDvb above -- that one controls whether the upload
+  // screen actually FETCHES DVB data during generation (a real ~30-minute
+  // Harmonic call). This one only controls whether the already-fetched
+  // numbers show up in a given download -- purely a display toggle on
+  // cached data, initialized from whatever the report was actually
+  // generated with once results come back.
+  const [includeDvbInDownload, setIncludeDvbInDownload] = useState(true)
   const [projects, setProjects] = useState([])
   const [projectId, setProjectId] = useState('default')
   const [projectsError, setProjectsError] = useState(null)
@@ -78,6 +85,16 @@ export default function ContentReportDashboard(){
       .catch(e => setProjectsError(`Could not load projects: ${e.message}`))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase])
+
+  // Initialize the detail page's download-time DVB toggle from whatever
+  // this specific report was actually generated with -- keyed on job_id so
+  // it only re-syncs when a genuinely NEW report loads, not on every
+  // repeated poll of the same in-progress job (which would otherwise stomp
+  // over the user's own manual toggle every couple seconds).
+  useEffect(() => {
+    if (data?.job_id) setIncludeDvbInDownload(data.include_dvb !== false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.job_id])
 
   const uploadToBackend = async (file) => {
     const form = new FormData()
@@ -204,6 +221,7 @@ export default function ContentReportDashboard(){
         batches_done:    job.batches_done,
         batches_total:   job.batches_total,
         stage_message:   job.stage_message,
+        include_dvb:     job.include_dvb,
       } : prev)
 
       // Stop polling when done or error
@@ -454,7 +472,7 @@ export default function ContentReportDashboard(){
         // Excel always contains both a Date-wise sheet (15-day-split or
         // per-month blocks, depending on the report's date range) and a
         // Month-wise sheet (when relevant) -- no separate flag needed for this.
-        const res = await fetch(`${apiBase}/download?include_archived_purged=${includeArchivedPurged}`, {headers:{'ngrok-skip-browser-warning':'1'}})
+        const res = await fetch(`${apiBase}/download?include_archived_purged=${includeArchivedPurged}&include_dvb=${includeDvbInDownload}`, {headers:{'ngrok-skip-browser-warning':'1'}})
         if (!res.ok) throw new Error('Download failed')
         const blob = await res.blob()
         const url  = URL.createObjectURL(blob)
@@ -598,6 +616,7 @@ export default function ContentReportDashboard(){
       projectId={projectId} setProjectId={setProjectId} projects={projects} projectsError={projectsError}
       inputMode={inputMode} setInputMode={setInputMode}
       selectedYear={selectedYear} setSelectedYear={setSelectedYear} selectedMonths={selectedMonths} toggleMonth={toggleMonth}
+      includeDvb={includeDvb} setIncludeDvb={setIncludeDvb}
       generateFromDb={generateFromDb}
       drag={drag} setDrag={setDrag} onDrop={onDrop} processFile={processFile}
       apiBase={apiBase} setApiBase={setApiBase} showApi={showApi} setShowApi={setShowApi}
@@ -740,18 +759,20 @@ export default function ContentReportDashboard(){
             />
             Include Archived, Purged &amp; Draft
           </label>
-          <label
-            style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#fff',cursor:'pointer',whiteSpace:'nowrap'}}
-            title="DVB (Harmonic) data has no server-side date filtering -- fetching it can take up to 30 minutes on a full run. Uncheck for a fast report when DVB numbers aren't needed this time."
-          >
-            <input
-              type="checkbox"
-              checked={includeDvb}
-              onChange={e=>setIncludeDvb(e.target.checked)}
-              style={{width:14,height:14,cursor:'pointer'}}
-            />
-            Include DVB (may add up to 30 min)
-          </label>
+          {data?.include_dvb && (
+            <label
+              style={{display:'flex',alignItems:'center',gap:6,fontSize:12,color:'#fff',cursor:'pointer',whiteSpace:'nowrap'}}
+              title="DVB data was already fetched when this report was generated -- this only controls whether it shows in the downloaded Excel, no re-fetching happens either way."
+            >
+              <input
+                type="checkbox"
+                checked={includeDvbInDownload}
+                onChange={e=>setIncludeDvbInDownload(e.target.checked)}
+                style={{width:14,height:14,cursor:'pointer'}}
+              />
+              Include DVB in report
+            </label>
+          )}
           <button onClick={handleDownload} disabled={dlLoading}
             style={{padding:'8px 18px',borderRadius:8,border:'none',background:'#2E75B6',color:'#fff',fontSize:13,fontWeight:700,cursor:'pointer',opacity:dlLoading?0.7:1}}>
             {dlLoading ? (dlWaitMsg || '⏳ Downloading...') : '⬇ Download Excel'}

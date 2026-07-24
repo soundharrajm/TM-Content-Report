@@ -6,11 +6,19 @@ export default function UploadScreen({
   projectId, setProjectId, projects, projectsError,
   inputMode, setInputMode,
   selectedYear, setSelectedYear, selectedMonths, toggleMonth,
+  includeDvb, setIncludeDvb,
   generateFromDb,
   drag, setDrag, onDrop, processFile,
   apiBase, setApiBase, showApi, setShowApi,
   error,
 }) {
+  // Reacts live as the dropdown selection changes -- has_dvb comes straight
+  // from /projects (true only for whichever project actually has a
+  // 'harmonic' section in projects.json, currently just Telecom Malaysia),
+  // not a hardcoded project-id check, so this stays correct if DVB support
+  // is ever configured for another project later.
+  const currentProjectHasDvb = projects.find(p => p.id === projectId)?.has_dvb
+
   return (
     <div style={{minHeight:'100vh',background:C.bg,display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'system-ui,sans-serif'}}>
       <div style={{textAlign:'center',maxWidth:520,width:'100%',padding:'0 20px'}}>
@@ -65,6 +73,27 @@ export default function UploadScreen({
                 )
               })}
             </div>
+
+            {/* Only shown for whichever project actually has DVB (Harmonic)
+                configured -- hides immediately if a different project is
+                picked from the dropdown above. This is the ONLY place this
+                decision gets made: DVB data is fetched once, during this
+                initial generate call, not something that can be toggled
+                later from the results page after the fact. */}
+            {currentProjectHasDvb && (
+              <label
+                style={{display:'flex',alignItems:'center',gap:8,marginBottom:14,cursor:'pointer'}}
+                title="DVB (Harmonic) data has no server-side date filtering -- fetching it can take up to 30 minutes on a full run. Uncheck for a fast report when DVB numbers aren't needed this time."
+              >
+                <input
+                  type="checkbox"
+                  checked={includeDvb}
+                  onChange={e=>setIncludeDvb(e.target.checked)}
+                  style={{width:16,height:16,cursor:'pointer'}}
+                />
+                <span style={{fontSize:13,color:C.navy,fontWeight:600}}>Include DVB (may add up to 30 min)</span>
+              </label>
+            )}
 
             <button onClick={()=>generateFromDb()} disabled={!selectedMonths.length}
               style={{width:'100%',padding:'12px',borderRadius:10,border:'none',
